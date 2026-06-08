@@ -13,6 +13,8 @@ dev = [
     "ruff>=0.7.0",
     "mypy>=1.13.0",
     "codespell>=2.3.0",
+    "pip-audit>=2.7.0",
+    "pip-licenses>=5.0.0",
 ]
 
 [build-system]
@@ -24,7 +26,7 @@ include = ["dispatcher*"]
 
 [tool.ruff]
 target-version = "py312"
-line-length = 88
+line-length = 79  # PEP 8
 src = ["dispatcher", "tests"]
 
 [tool.ruff.lint]
@@ -43,6 +45,9 @@ plugins = []
 module = "tests.*"
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
+# Enum identity asserts (`x is Status.A`) narrow to a literal that mypy does
+# not widen after a mutating method call, producing false comparison-overlaps.
+strict_equality = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
