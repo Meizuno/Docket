@@ -41,13 +41,23 @@ class Broker(Protocol):
     never changes task status — use cases do, via the TaskRepository. A task
     is pullable while it is PENDING and not currently leased.
 
+    Invariant: the Broker and the TaskRepository are two views over ONE task
+    store, so an enqueued task is immediately visible to repository reads
+    (e.g. list_pending) and a status change is visible to the broker. SQL
+    realizes this with the shared tasks table; in-memory test doubles share a
+    backing dict. A broker not backed by the same store as its repository
+    breaks ``SubmitTask`` -> ``list_pending``.
+
     A consumer identifies itself on ``pull``, which leases the task to it. The
-    lease is held for the whole execution and must be renewed with ``extend``
-    before it expires; an expired lease is reclaimed (the worker is presumed
-    dead). ``ack``/``nack`` release the lease (the use case has already set the
-    terminal/requeued status); both take the holder's id so only the lease
-    owner can resolve it. ``requeue_service`` releases all of a crashed
-    consumer's leases, and ``reclaim_expired`` releases every lapsed lease.
+    lease is the sole authority over a RUNNING task: a worker holds the task
+    only while it holds a live lease, so it MUST renew with ``extend``
+    (heartbeat) well within ``lease_timeout`` or lose the task to reclaim. An
+    expired lease is reclaimed (the worker is presumed dead). ``release``
+    frees the lease for the live holder only and raises otherwise (whether the
+    use case is finishing or requeuing is its own status write), so a resolve
+    and a concurrent reclaim serialize on that conditional write.
+    ``requeue_service`` releases all of a crashed consumer's leases, and
+    ``reclaim_expired`` releases every lapsed lease.
     """
 
     async def enqueue(self, task: Task) -> None: ...
@@ -55,8 +65,7 @@ class Broker(Protocol):
     async def extend(
         self, service_id: uuid.UUID, task_id: uuid.UUID
     ) -> None: ...
-    async def ack(self, service_id: uuid.UUID, task_id: uuid.UUID) -> None: ...
-    async def nack(
+    async def release(
         self, service_id: uuid.UUID, task_id: uuid.UUID
     ) -> None: ...
     async def requeue_service(self, service_id: uuid.UUID) -> None: ...

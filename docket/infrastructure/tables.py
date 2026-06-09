@@ -7,11 +7,13 @@ from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
+    Index,
     Integer,
     MetaData,
     String,
     Table,
     Uuid,
+    text,
 )
 
 metadata = MetaData()
@@ -44,6 +46,17 @@ services = Table(
     Column("token_hash", String, nullable=False),
     Column("registered_at", DateTime(timezone=True), nullable=False),
     Column("last_seen_at", DateTime(timezone=True), nullable=False),
+)
+
+# Token hashes are unique; the partial predicate excludes the empty default so
+# placeholder/unregistered services (token_hash == "") never collide. Makes
+# get_by_token_hash a single indexed probe.
+Index(
+    "uq_services_token_hash",
+    services.c.token_hash,
+    unique=True,
+    sqlite_where=text("token_hash != ''"),
+    postgresql_where=text("token_hash != ''"),
 )
 
 assignments = Table(

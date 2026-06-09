@@ -32,11 +32,15 @@ class Settings(BaseSettings):
         min_length=1,
     )
     log_level: str = Field(default="INFO")
-    # Dispatches a task gets before it is dead-lettered to FAILED.
+    # Dispatches a task gets before it is dead-lettered to FAILED. The budget
+    # covers both explicit failures and lease-expiry reclaims.
     max_attempts: int = Field(default=3, ge=1)
-    # Seconds a pulled task stays leased; a running worker renews it via
-    # heartbeat, so this only bounds how quickly a crash is reclaimed.
-    lease_timeout: float = Field(default=30.0, gt=0)
+    # Seconds a pulled task stays leased. Sized for heavy work: a running
+    # worker MUST heartbeat (extend) well within this, so it only bounds how
+    # quickly a crashed worker's task is reclaimed.
+    lease_timeout: float = Field(default=300.0, gt=0)
+    # Seconds between expired-lease reaper sweeps.
+    reaper_interval: float = Field(default=30.0, gt=0)
 
     @field_validator("log_level")
     @classmethod

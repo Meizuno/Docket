@@ -34,7 +34,7 @@ async def _claim(
     task = Task(name="compute", attempts=attempts)
     await broker.enqueue(task)
     claimed = await ClaimTask(broker, tasks, services, assignments).execute(
-        service.id
+        service
     )
     assert claimed is not None
     return task, service

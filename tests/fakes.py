@@ -6,10 +6,15 @@ from docket.domain import Assignment, Service, Task, TaskStatus
 
 
 class FakeTaskRepository:
-    """In-memory TaskRepository."""
+    """In-memory TaskRepository.
 
-    def __init__(self) -> None:
-        self.items: dict[uuid.UUID, Task] = {}
+    Pass the same ``store`` dict to InMemoryBroker so the broker and this
+    repository are two views over one task store, as SqlBroker and
+    SqlTaskRepository are over the tasks table.
+    """
+
+    def __init__(self, store: dict[uuid.UUID, Task] | None = None) -> None:
+        self.items: dict[uuid.UUID, Task] = {} if store is None else store
 
     async def add(self, task: Task) -> None:
         self.items[task.id] = task

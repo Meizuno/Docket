@@ -11,8 +11,9 @@ from docket.domain import Broker, DomainError, Task, TaskPriority
 class SubmitTask:
     """Submit a new task into the queue (created as PENDING).
 
-    Enqueues through the Broker port so the queue is the single source of
-    pullable work and any Broker implementation is usable.
+    Enqueues through the Broker port. The broker and the TaskRepository are
+    two views over one task store (the tasks table for SQL), so a submitted
+    task is at once pullable and visible to reads such as list_pending.
     """
 
     def __init__(self, broker: Broker) -> None:

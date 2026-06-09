@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from docket.domain import DomainError, Service, Task, TaskStatus
@@ -10,6 +11,17 @@ from docket.infrastructure import (
 )
 from docket.use_cases import ClaimTask, CompleteTask, FailTask
 from sqlalchemy.ext.asyncio import AsyncConnection
+
+
+class FakeClock:
+    def __init__(self) -> None:
+        self.now = datetime(2026, 1, 1, tzinfo=UTC)
+
+    def __call__(self) -> datetime:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += timedelta(seconds=seconds)
 
 
 def _repos(
@@ -42,7 +54,7 @@ async def _claimed(
     task = Task(name="compute", attempts=attempts)
     await broker.enqueue(task)
     claimed = await ClaimTask(broker, tasks, services, assignments).execute(
-        service.id
+        service
     )
     assert claimed is not None
     return claimed[0]
@@ -82,7 +94,7 @@ async def test_fail_under_budget_requeues_to_pending(
     ).execute(service.id, task.id, "boom")
 
     assert failed.status is TaskStatus.PENDING
-    assert failed.error == "boom"
+    assert failed.error == "failed: boom"
     freed = await services.get(service.id)
     assert freed is not None
     assert freed.busy is False
@@ -133,3 +145,35 @@ async def test_complete_non_running_task_is_rejected(
         await CompleteTask(broker, tasks, services, assignments).execute(
             service.id, task.id
         )
+
+
+async def test_complete_after_lease_lost_is_rejected_without_rollback(
+    conn: AsyncConnection,
+) -> None:
+    # A heavy task whose lease lapsed must not have a terminal status written
+    # and then rolled back: the lease gate rejects before any status write.
+    clock = FakeClock()
+    broker = SqlBroker(conn, lease_timeout=10.0, clock=clock)
+    tasks = SqlTaskRepository(conn)
+    services = SqlServiceRepository(conn)
+    assignments = SqlAssignmentRepository(conn)
+    service = Service(name="worker")
+    await services.add(service)
+    task = Task(name="compute")
+    await broker.enqueue(task)
+    claimed = await ClaimTask(broker, tasks, services, assignments).execute(
+        service
+    )
+    assert claimed is not None
+
+    clock.advance(11.0)  # lease lapses before completion
+
+    with pytest.raises(DomainError):
+        await CompleteTask(broker, tasks, services, assignments).execute(
+            service.id, task.id, {"value": 42}
+        )
+    # the terminal write never happened
+    current = await tasks.get(task.id)
+    assert current is not None
+    assert current.status is TaskStatus.RUNNING
+    assert current.result is None

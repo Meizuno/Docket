@@ -1,5 +1,3 @@
-import uuid
-
 import pytest
 from docket.domain import (
     DomainError,
@@ -30,7 +28,7 @@ def _claim(conn: AsyncConnection) -> ClaimTask:
 async def test_empty_queue_returns_none(conn: AsyncConnection) -> None:
     service = Service(name="worker")
     await SqlServiceRepository(conn).add(service)
-    assert await _claim(conn).execute(service.id) is None
+    assert await _claim(conn).execute(service) is None
 
 
 async def test_claim_leases_task_and_marks_service_busy(
@@ -44,7 +42,7 @@ async def test_claim_leases_task_and_marks_service_busy(
     task = Task(name="compute")
     await tasks.add(task)  # PENDING row = enqueued
 
-    claimed = await _claim(conn).execute(service.id)
+    claimed = await _claim(conn).execute(service)
 
     assert claimed is not None
     claimed_task, assignment = claimed
@@ -63,20 +61,13 @@ async def test_claim_leases_task_and_marks_service_busy(
     await SqlBroker(conn).extend(service.id, task.id)
 
 
-async def test_claim_unknown_service_raises(conn: AsyncConnection) -> None:
-    with pytest.raises(DomainError):
-        await _claim(conn).execute(uuid.uuid4())
-
-
 async def test_claim_offline_service_raises(conn: AsyncConnection) -> None:
     service = Service(name="worker", status=ServiceStatus.OFFLINE)
-    await SqlServiceRepository(conn).add(service)
     with pytest.raises(DomainError):
-        await _claim(conn).execute(service.id)
+        await _claim(conn).execute(service)
 
 
 async def test_claim_busy_service_raises(conn: AsyncConnection) -> None:
     service = Service(name="worker", busy=True)
-    await SqlServiceRepository(conn).add(service)
     with pytest.raises(DomainError):
-        await _claim(conn).execute(service.id)
+        await _claim(conn).execute(service)

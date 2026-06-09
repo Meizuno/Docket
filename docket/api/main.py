@@ -27,9 +27,6 @@ from docket.use_cases import ReclaimExpiredTasks
 
 logger = logging.getLogger(__name__)
 
-REAPER_INTERVAL = 15.0
-"""Seconds between expired-lease sweeps (see task 5: move to Settings)."""
-
 
 async def _reap_expired(engine: AsyncEngine, interval: float) -> None:
     """Periodically reclaim tasks abandoned by crashed workers.
@@ -60,7 +57,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     engine = get_engine()
     async with engine.begin() as conn:
         await conn.run_sync(metadata.create_all)
-    reaper = asyncio.create_task(_reap_expired(engine, REAPER_INTERVAL))
+    reaper = asyncio.create_task(
+        _reap_expired(engine, get_settings().reaper_interval)
+    )
     try:
         yield
     finally:

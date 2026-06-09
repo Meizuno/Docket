@@ -17,38 +17,19 @@ from docket.domain import (
 )
 
 MAX_ATTEMPTS = 3
-"""Default dispatch budget before a task is dead-lettered (see task 4)."""
+"""Default dispatch budget before a task is dead-lettered.
+
+Counts every dispatch — both explicit failures and lease-expiry reclaims, since
+a lost delivery is a real attempt. The recorded error distinguishes the cause
+(``failed: <error>`` vs ``lease expired``).
+"""
 
 
-async def _owned_running_task(
-    tasks: TaskRepository,
-    assignments: AssignmentRepository,
-    service_id: uuid.UUID,
-    task_id: uuid.UUID,
-) -> Task:
-    """Load a task the service currently owns and is running, or raise.
-
-    Ownership is the active Assignment for ``task_id``: only the service that
-    claimed the task may resolve it.
-    """
-    assignment = await assignments.get_active(task_id)
-    if assignment is None or assignment.service_id != service_id:
-        raise DomainError(
-            f"task {task_id} is not owned by service {service_id}"
-        )
+async def _load(tasks: TaskRepository, task_id: uuid.UUID) -> Task:
     task = await tasks.get(task_id)
-    if task is None or task.status is not TaskStatus.RUNNING:
-        raise DomainError(f"task {task_id} is not running")
+    if task is None:
+        raise DomainError(f"task {task_id} does not exist")
     return task
-
-
-async def _free_service(
-    services: ServiceRepository, service_id: uuid.UUID
-) -> None:
-    service = await services.get(service_id)
-    if service is not None:
-        service.busy = False
-        await services.update(service)
 
 
 async def _release_assignment(
@@ -60,8 +41,25 @@ async def _release_assignment(
         await assignments.update(assignment)
 
 
+async def _free_service(
+    services: ServiceRepository, service_id: uuid.UUID
+) -> None:
+    service = await services.get(service_id)
+    if service is not None:
+        service.busy = False
+        service.last_seen_at = datetime.now(UTC)
+        await services.update(service)
+
+
 class CompleteTask:
-    """Mark a running task SUCCEEDED, release its lease and its service."""
+    """Mark a running task SUCCEEDED, release its lease and its service.
+
+    The lease is the sole authority: releasing it (``ack``) is a conditional
+    write that succeeds only for the current live holder and raises
+    otherwise, so a worker that lost its lease writes nothing — no terminal
+    status that later rolls back. The Assignment is an audit record, not a
+    second gate.
+    """
 
     def __init__(
         self,
@@ -81,15 +79,12 @@ class CompleteTask:
         task_id: uuid.UUID,
         result: dict[str, Any] | None = None,
     ) -> Task:
-        task = await _owned_running_task(
-            self._tasks, self._assignments, service_id, task_id
-        )
+        await self._broker.release(service_id, task_id)  # authorize + release
+        task = await _load(self._tasks, task_id)
         task.status = TaskStatus.SUCCEEDED
         task.result = result
         task.updated_at = datetime.now(UTC)
         await self._tasks.update(task)
-
-        await self._broker.ack(service_id, task_id)
         await _release_assignment(self._assignments, task_id)
         await _free_service(self._services, service_id)
         return task
@@ -98,9 +93,10 @@ class CompleteTask:
 class FailTask:
     """Fail a running task: requeue under the budget, else dead-letter.
 
-    Under ``max_attempts`` the task returns to PENDING (the lease is released
-    so it is pullable again); at the limit it becomes FAILED. Either way the
-    Assignment is released and the service freed.
+    Authorized by the lease (releasing it raises for anyone but the live
+    holder). Under ``max_attempts`` the task returns to PENDING (pullable
+    again); at the limit it becomes FAILED. The Assignment is released and
+    the service freed.
     """
 
     def __init__(
@@ -124,18 +120,15 @@ class FailTask:
         task_id: uuid.UUID,
         error: str,
     ) -> Task:
-        task = await _owned_running_task(
-            self._tasks, self._assignments, service_id, task_id
-        )
-        task.error = error
+        await self._broker.release(service_id, task_id)  # authorize + release
+        task = await _load(self._tasks, task_id)
+        task.error = f"failed: {error}"
         task.updated_at = datetime.now(UTC)
         if task.attempts < self._max_attempts:
             task.status = TaskStatus.PENDING
         else:
             task.status = TaskStatus.FAILED
         await self._tasks.update(task)
-
-        await self._broker.nack(service_id, task_id)
         await _release_assignment(self._assignments, task_id)
         await _free_service(self._services, service_id)
         return task

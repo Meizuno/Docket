@@ -79,7 +79,7 @@ async def claim_task(
 ) -> TaskOut | None:
     """Claim the next task; null when the queue is empty."""
     claimed = await ClaimTask(broker, tasks, services, assignments).execute(
-        service.id
+        service
     )
     if claimed is None:
         return None
@@ -106,8 +106,9 @@ async def heartbeat_task(
     task_id: uuid.UUID,
     service: CurrentService,
     broker: BrokerDep,
+    services: ServiceRepo,
 ) -> None:
-    await Heartbeat(broker).execute(service.id, task_id)
+    await Heartbeat(broker, services).execute(service.id, task_id)
 
 
 @router.post("/{task_id}/complete")

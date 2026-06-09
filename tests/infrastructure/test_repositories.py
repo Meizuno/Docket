@@ -15,6 +15,7 @@ from docket.infrastructure import (
     metadata,
 )
 from sqlalchemy import StaticPool
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 
 
@@ -103,6 +104,23 @@ class TestSqlServiceRepository:
         await repo.add(Service(name="a"))
         await repo.add(Service(name="b"))
         assert {s.name for s in await repo.list_all()} == {"a", "b"}
+
+    async def test_get_by_token_hash(self, conn: AsyncConnection) -> None:
+        repo = SqlServiceRepository(conn)
+        service = Service(name="worker", token_hash="abc123")
+        await repo.add(service)
+        found = await repo.get_by_token_hash("abc123")
+        assert found is not None
+        assert found.id == service.id
+        assert await repo.get_by_token_hash("nope") is None
+
+    async def test_duplicate_token_hash_is_rejected(
+        self, conn: AsyncConnection
+    ) -> None:
+        repo = SqlServiceRepository(conn)
+        await repo.add(Service(name="a", token_hash="dup"))
+        with pytest.raises(IntegrityError):
+            await repo.add(Service(name="b", token_hash="dup"))
 
 
 class TestSqlAssignmentRepository:
