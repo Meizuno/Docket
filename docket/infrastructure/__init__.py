@@ -5,15 +5,13 @@ from docket.infrastructure.sql import (
     SqlAssignmentRepository,
     SqlServiceRepository,
     SqlTaskRepository,
-    create_engine,
-    create_schema,
 )
+from docket.infrastructure.tables import metadata
 
 __all__ = [
     "InMemoryBroker",
     "SqlAssignmentRepository",
     "SqlServiceRepository",
     "SqlTaskRepository",
-    "create_engine",
-    "create_schema",
+    "metadata",
 ]

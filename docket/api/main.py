@@ -11,13 +11,14 @@ from fastapi.responses import JSONResponse
 from docket.api import services, tasks
 from docket.api.dependencies import get_engine
 from docket.domain import DomainError
-from docket.infrastructure import create_schema
+from docket.infrastructure import metadata
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     engine = get_engine()
-    await create_schema(engine)
+    async with engine.begin() as conn:
+        await conn.run_sync(metadata.create_all)
     yield
     await engine.dispose()
 

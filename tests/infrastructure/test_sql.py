@@ -12,7 +12,7 @@ from docket.infrastructure import (
     SqlAssignmentRepository,
     SqlServiceRepository,
     SqlTaskRepository,
-    create_schema,
+    metadata,
 )
 from sqlalchemy import StaticPool
 from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
@@ -25,7 +25,8 @@ async def conn() -> AsyncIterator[AsyncConnection]:
         poolclass=StaticPool,
         connect_args={"check_same_thread": False},
     )
-    await create_schema(engine)
+    async with engine.begin() as setup:
+        await setup.run_sync(metadata.create_all)
     async with engine.connect() as connection:
         yield connection
     await engine.dispose()

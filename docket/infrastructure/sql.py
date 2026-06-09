@@ -11,11 +11,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import RowMapping, insert, select, update
-from sqlalchemy.ext.asyncio import (
-    AsyncConnection,
-    AsyncEngine,
-    create_async_engine,
-)
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from docket.domain.models import (
     Assignment,
@@ -25,18 +21,7 @@ from docket.domain.models import (
     TaskPriority,
     TaskStatus,
 )
-from docket.infrastructure.tables import assignments, metadata, services, tasks
-
-
-def create_engine(url: str) -> AsyncEngine:
-    """Create an async engine for the given SQLAlchemy URL."""
-    return create_async_engine(url)
-
-
-async def create_schema(engine: AsyncEngine) -> None:
-    """Create all tables if they do not exist."""
-    async with engine.begin() as conn:
-        await conn.run_sync(metadata.create_all)
+from docket.infrastructure.tables import assignments, services, tasks
 
 
 def _aware(value: datetime) -> datetime:

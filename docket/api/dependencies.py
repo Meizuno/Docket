@@ -7,19 +7,19 @@ from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends
-from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
+from sqlalchemy.ext.asyncio import (
+    AsyncConnection,
+    AsyncEngine,
+    create_async_engine,
+)
 
 from docket.config import get_settings
-from docket.infrastructure import (
-    SqlServiceRepository,
-    SqlTaskRepository,
-    create_engine,
-)
+from docket.infrastructure import SqlServiceRepository, SqlTaskRepository
 
 
 @lru_cache
 def get_engine() -> AsyncEngine:
-    return create_engine(get_settings().database_url)
+    return create_async_engine(get_settings().database_url)
 
 
 async def get_connection(
