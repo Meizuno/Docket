@@ -94,7 +94,7 @@ async def test_fail_under_budget_requeues_to_pending(
     ).execute(service.id, task.id, "boom")
 
     assert failed.status is TaskStatus.PENDING
-    assert failed.error == "boom"
+    assert failed.error == "failed: boom"
     freed = await services.get(service.id)
     assert freed is not None
     assert freed.busy is False

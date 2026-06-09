@@ -17,7 +17,12 @@ from docket.domain import (
 )
 
 MAX_ATTEMPTS = 3
-"""Default dispatch budget before a task is dead-lettered (see task 4)."""
+"""Default dispatch budget before a task is dead-lettered.
+
+Counts every dispatch — both explicit failures and lease-expiry reclaims, since
+a lost delivery is a real attempt. The recorded error distinguishes the cause
+(``failed: <error>`` vs ``lease expired``).
+"""
 
 
 async def _load(tasks: TaskRepository, task_id: uuid.UUID) -> Task:
@@ -116,7 +121,7 @@ class FailTask:
     ) -> Task:
         await self._broker.release(service_id, task_id)  # authorize + release
         task = await _load(self._tasks, task_id)
-        task.error = error
+        task.error = f"failed: {error}"
         task.updated_at = datetime.now(UTC)
         if task.attempts < self._max_attempts:
             task.status = TaskStatus.PENDING

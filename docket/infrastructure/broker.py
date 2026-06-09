@@ -14,7 +14,7 @@ from docket.domain import DomainError, Task, TaskStatus
 from docket.infrastructure.repositories import dump_task, load_task
 from docket.infrastructure.tables import tasks
 
-DEFAULT_LEASE_TIMEOUT = 30.0
+DEFAULT_LEASE_TIMEOUT = 300.0
 
 
 def _utcnow() -> datetime:

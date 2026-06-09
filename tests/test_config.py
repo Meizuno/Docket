@@ -10,7 +10,8 @@ def test_defaults() -> None:
     assert settings.database_url.startswith("postgresql+asyncpg://")
     assert settings.log_level == "INFO"
     assert settings.max_attempts == 3
-    assert settings.lease_timeout == 30.0
+    assert settings.lease_timeout == 300.0
+    assert settings.reaper_interval == 30.0
 
 
 def test_invalid_max_attempts_fails_fast(
@@ -25,6 +26,14 @@ def test_invalid_lease_timeout_fails_fast(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("DOCKET_LEASE_TIMEOUT", "0")
+    with pytest.raises(ValidationError):
+        Settings()
+
+
+def test_invalid_reaper_interval_fails_fast(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DOCKET_REAPER_INTERVAL", "0")
     with pytest.raises(ValidationError):
         Settings()
 
