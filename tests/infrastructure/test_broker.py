@@ -129,41 +129,31 @@ async def test_extend_after_expiry_raises(case: Case) -> None:
         await case.broker.extend(SERVICE, task.id)
 
 
-async def test_ack_releases_the_lease(case: Case) -> None:
+async def test_release_frees_the_lease(case: Case) -> None:
     task = Task(name="compute")
     await case.broker.enqueue(task)
     await case.broker.pull(SERVICE)
-    await case.broker.ack(SERVICE, task.id)
+    await case.broker.release(SERVICE, task.id)
     repulled = await case.broker.pull(OTHER)  # lease freed -> pullable
     assert repulled is not None
     assert repulled.id == task.id
 
 
-async def test_nack_releases_the_lease(case: Case) -> None:
-    task = Task(name="compute")
-    await case.broker.enqueue(task)
-    await case.broker.pull(SERVICE)
-    await case.broker.nack(SERVICE, task.id)
-    repulled = await case.broker.pull(OTHER)
-    assert repulled is not None
-    assert repulled.id == task.id
-
-
-async def test_ack_by_non_holder_raises(case: Case) -> None:
+async def test_release_by_non_holder_raises(case: Case) -> None:
     task = Task(name="compute")
     await case.broker.enqueue(task)
     await case.broker.pull(SERVICE)
     with pytest.raises(DomainError):
-        await case.broker.ack(OTHER, task.id)
+        await case.broker.release(OTHER, task.id)
 
 
-async def test_ack_after_lease_expiry_raises(case: Case) -> None:
+async def test_release_after_lease_expiry_raises(case: Case) -> None:
     task = Task(name="compute")
     await case.broker.enqueue(task)
     await case.broker.pull(SERVICE)
     case.clock.advance(LEASE + 1)
     with pytest.raises(DomainError):
-        await case.broker.ack(SERVICE, task.id)
+        await case.broker.release(SERVICE, task.id)
 
 
 async def test_requeue_service_frees_only_its_leases(case: Case) -> None:

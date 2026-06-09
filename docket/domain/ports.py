@@ -45,9 +45,10 @@ class Broker(Protocol):
     lease is the sole authority over a RUNNING task: a worker holds the task
     only while it holds a live lease, so it MUST renew with ``extend``
     (heartbeat) well within ``lease_timeout`` or lose the task to reclaim. An
-    expired lease is reclaimed (the worker is presumed dead). ``ack``/``nack``
-    release the lease for the live holder only and raise otherwise, so a
-    resolve and a concurrent reclaim serialize on that conditional write.
+    expired lease is reclaimed (the worker is presumed dead). ``release``
+    frees the lease for the live holder only and raises otherwise (whether the
+    use case is finishing or requeuing is its own status write), so a resolve
+    and a concurrent reclaim serialize on that conditional write.
     ``requeue_service`` releases all of a crashed consumer's leases, and
     ``reclaim_expired`` releases every lapsed lease.
     """
@@ -57,8 +58,7 @@ class Broker(Protocol):
     async def extend(
         self, service_id: uuid.UUID, task_id: uuid.UUID
     ) -> None: ...
-    async def ack(self, service_id: uuid.UUID, task_id: uuid.UUID) -> None: ...
-    async def nack(
+    async def release(
         self, service_id: uuid.UUID, task_id: uuid.UUID
     ) -> None: ...
     async def requeue_service(self, service_id: uuid.UUID) -> None: ...

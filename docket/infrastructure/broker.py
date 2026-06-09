@@ -74,11 +74,7 @@ class InMemoryBroker:
             seconds=self._lease_timeout
         )
 
-    async def ack(self, service_id: uuid.UUID, task_id: uuid.UUID) -> None:
-        self._live_lease(service_id, task_id)
-        del self._leases[task_id]
-
-    async def nack(self, service_id: uuid.UUID, task_id: uuid.UUID) -> None:
+    async def release(self, service_id: uuid.UUID, task_id: uuid.UUID) -> None:
         self._live_lease(service_id, task_id)
         del self._leases[task_id]
 
@@ -126,10 +122,10 @@ class SqlBroker:
     claims the highest-priority one with ``SELECT ... FOR UPDATE SKIP LOCKED``
     (concurrency-safe on Postgres; a no-op clause on sqlite) and leases it via
     the locked_by / lease_expires_at columns. The lease is held through
-    execution and renewed with ``extend``; ``ack`` and ``nack`` release it
-    (the use case has already set the terminal/requeued status). The broker
-    never writes task status. ``requeue_service`` releases all of a crashed
-    consumer's leases, and ``reclaim_expired`` releases every lapsed lease.
+    execution and renewed with ``extend``; ``release`` frees it for the live
+    holder only (the use case sets the terminal/requeued status itself). The
+    broker never writes task status. ``requeue_service`` releases all of a
+    crashed consumer's leases, and ``reclaim_expired`` frees every lapsed one.
     """
 
     def __init__(
@@ -194,11 +190,21 @@ class SqlBroker:
                 f"task {task_id} is not leased to service {service_id}"
             )
 
-    async def ack(self, service_id: uuid.UUID, task_id: uuid.UUID) -> None:
-        await self._release(service_id, task_id)
-
-    async def nack(self, service_id: uuid.UUID, task_id: uuid.UUID) -> None:
-        await self._release(service_id, task_id)
+    async def release(self, service_id: uuid.UUID, task_id: uuid.UUID) -> None:
+        """Clear the lease, but only for the current live-lease holder."""
+        result = await self._conn.execute(
+            update(tasks)
+            .where(
+                tasks.c.id == task_id,
+                tasks.c.locked_by == service_id,
+                tasks.c.lease_expires_at > self._clock(),
+            )
+            .values(locked_by=None, lease_expires_at=None)
+        )
+        if result.rowcount == 0:
+            raise DomainError(
+                f"task {task_id} is not leased to service {service_id}"
+            )
 
     async def requeue_service(self, service_id: uuid.UUID) -> None:
         await self._conn.execute(
@@ -222,21 +228,3 @@ class SqlBroker:
             .returning(tasks.c.id)
         )
         return [row.id for row in result.all()]
-
-    async def _release(
-        self, service_id: uuid.UUID, task_id: uuid.UUID
-    ) -> None:
-        """Clear the lease, but only for the current live-lease holder."""
-        result = await self._conn.execute(
-            update(tasks)
-            .where(
-                tasks.c.id == task_id,
-                tasks.c.locked_by == service_id,
-                tasks.c.lease_expires_at > self._clock(),
-            )
-            .values(locked_by=None, lease_expires_at=None)
-        )
-        if result.rowcount == 0:
-            raise DomainError(
-                f"task {task_id} is not leased to service {service_id}"
-            )

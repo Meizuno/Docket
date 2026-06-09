@@ -73,7 +73,7 @@ class CompleteTask:
         task_id: uuid.UUID,
         result: dict[str, Any] | None = None,
     ) -> Task:
-        await self._broker.ack(service_id, task_id)  # authorize + release
+        await self._broker.release(service_id, task_id)  # authorize + release
         task = await _load(self._tasks, task_id)
         task.status = TaskStatus.SUCCEEDED
         task.result = result
@@ -114,7 +114,7 @@ class FailTask:
         task_id: uuid.UUID,
         error: str,
     ) -> Task:
-        await self._broker.nack(service_id, task_id)  # authorize + release
+        await self._broker.release(service_id, task_id)  # authorize + release
         task = await _load(self._tasks, task_id)
         task.error = error
         task.updated_at = datetime.now(UTC)
