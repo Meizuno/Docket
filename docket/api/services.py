@@ -8,9 +8,20 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict
 
-from docket.api.dependencies import ServiceRepo
+from docket.api.dependencies import (
+    AssignmentRepo,
+    BrokerDep,
+    ServiceRepo,
+    TaskRepo,
+)
+from docket.api.tasks import TaskOut
 from docket.domain import ServiceStatus
-from docket.use_cases import GetService, ListServices, RegisterService
+from docket.use_cases import (
+    ClaimTask,
+    GetService,
+    ListServices,
+    RegisterService,
+)
 
 
 class ServiceCreate(BaseModel):
@@ -55,3 +66,21 @@ async def get_service(
     if service is None:
         raise HTTPException(status_code=404, detail="service not found")
     return ServiceOut.model_validate(service)
+
+
+@router.post("/{service_id}/claim")
+async def claim_task(
+    service_id: uuid.UUID,
+    broker: BrokerDep,
+    tasks: TaskRepo,
+    services: ServiceRepo,
+    assignments: AssignmentRepo,
+) -> TaskOut | None:
+    """Claim the next task; null when the queue is empty."""
+    claimed = await ClaimTask(broker, tasks, services, assignments).execute(
+        service_id
+    )
+    if claimed is None:
+        return None
+    task, _assignment = claimed
+    return TaskOut.model_validate(task)

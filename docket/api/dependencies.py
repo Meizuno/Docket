@@ -14,7 +14,12 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from docket.config import get_settings
-from docket.infrastructure import SqlServiceRepository, SqlTaskRepository
+from docket.infrastructure import (
+    SqlAssignmentRepository,
+    SqlBroker,
+    SqlServiceRepository,
+    SqlTaskRepository,
+)
 
 
 @lru_cache
@@ -40,5 +45,17 @@ def get_service_repo(conn: Connection) -> SqlServiceRepository:
     return SqlServiceRepository(conn)
 
 
+def get_assignment_repo(conn: Connection) -> SqlAssignmentRepository:
+    return SqlAssignmentRepository(conn)
+
+
+def get_broker(conn: Connection) -> SqlBroker:
+    return SqlBroker(conn)
+
+
 TaskRepo = Annotated[SqlTaskRepository, Depends(get_task_repo)]
 ServiceRepo = Annotated[SqlServiceRepository, Depends(get_service_repo)]
+AssignmentRepo = Annotated[
+    SqlAssignmentRepository, Depends(get_assignment_repo)
+]
+BrokerDep = Annotated[SqlBroker, Depends(get_broker)]

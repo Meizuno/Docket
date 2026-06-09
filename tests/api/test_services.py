@@ -35,3 +35,28 @@ async def test_list_services(client: httpx.AsyncClient) -> None:
     response = await client.get("/services")
     assert response.status_code == 200
     assert {s["name"] for s in response.json()} == {"a", "b"}
+
+
+async def test_claim_returns_task_and_marks_service_busy(
+    client: httpx.AsyncClient,
+) -> None:
+    service = (await client.post("/services", json={"name": "w"})).json()
+    task = (await client.post("/tasks", json={"name": "compute"})).json()
+
+    claimed = await client.post(f"/services/{service['id']}/claim")
+    assert claimed.status_code == 200
+    body = claimed.json()
+    assert body["id"] == task["id"]
+    assert body["status"] == "running"
+
+    fetched = (await client.get(f"/services/{service['id']}")).json()
+    assert fetched["busy"] is True
+
+
+async def test_claim_empty_queue_returns_null(
+    client: httpx.AsyncClient,
+) -> None:
+    service = (await client.post("/services", json={"name": "w"})).json()
+    claimed = await client.post(f"/services/{service['id']}/claim")
+    assert claimed.status_code == 200
+    assert claimed.json() is None
