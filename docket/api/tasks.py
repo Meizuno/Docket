@@ -65,8 +65,8 @@ router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 
 @router.post("", status_code=201)
-async def submit_task(body: TaskCreate, tasks: TaskRepo) -> TaskOut:
-    task = await SubmitTask(tasks).execute(
+async def submit_task(body: TaskCreate, broker: BrokerDep) -> TaskOut:
+    task = await SubmitTask(broker).execute(
         body.name, body.payload, priority=body.priority
     )
     return TaskOut.model_validate(task)

@@ -5,14 +5,18 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from docket.domain import DomainError, Task, TaskPriority, TaskRepository
+from docket.domain import Broker, DomainError, Task, TaskPriority
 
 
 class SubmitTask:
-    """Submit a new task into the queue (created as PENDING)."""
+    """Submit a new task into the queue (created as PENDING).
 
-    def __init__(self, tasks: TaskRepository) -> None:
-        self._tasks = tasks
+    Enqueues through the Broker port so the queue is the single source of
+    pullable work and any Broker implementation is usable.
+    """
+
+    def __init__(self, broker: Broker) -> None:
+        self._broker = broker
 
     async def execute(
         self,
@@ -28,5 +32,5 @@ class SubmitTask:
             payload=dict(payload or {}),
             priority=priority,
         )
-        await self._tasks.add(task)
+        await self._broker.enqueue(task)
         return task
