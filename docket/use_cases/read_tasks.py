@@ -13,8 +13,8 @@ class GetTask:
     def __init__(self, tasks: TaskRepository) -> None:
         self._tasks = tasks
 
-    def execute(self, task_id: uuid.UUID) -> Task | None:
-        return self._tasks.get(task_id)
+    async def execute(self, task_id: uuid.UUID) -> Task | None:
+        return await self._tasks.get(task_id)
 
 
 class ListPendingTasks:
@@ -23,5 +23,5 @@ class ListPendingTasks:
     def __init__(self, tasks: TaskRepository) -> None:
         self._tasks = tasks
 
-    def execute(self) -> list[Task]:
-        return self._tasks.list_pending()
+    async def execute(self) -> list[Task]:
+        return await self._tasks.list_pending()

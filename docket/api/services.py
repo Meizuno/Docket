@@ -32,22 +32,26 @@ router = APIRouter(prefix="/services", tags=["services"])
 
 
 @router.post("", status_code=201)
-def register_service(body: ServiceCreate, services: ServiceRepo) -> ServiceOut:
-    service = RegisterService(services).execute(body.name)
+async def register_service(
+    body: ServiceCreate, services: ServiceRepo
+) -> ServiceOut:
+    service = await RegisterService(services).execute(body.name)
     return ServiceOut.model_validate(service)
 
 
 @router.get("")
-def list_services(services: ServiceRepo) -> list[ServiceOut]:
+async def list_services(services: ServiceRepo) -> list[ServiceOut]:
     return [
         ServiceOut.model_validate(service)
-        for service in ListServices(services).execute()
+        for service in await ListServices(services).execute()
     ]
 
 
 @router.get("/{service_id}")
-def get_service(service_id: uuid.UUID, services: ServiceRepo) -> ServiceOut:
-    service = GetService(services).execute(service_id)
+async def get_service(
+    service_id: uuid.UUID, services: ServiceRepo
+) -> ServiceOut:
+    service = await GetService(services).execute(service_id)
     if service is None:
         raise HTTPException(status_code=404, detail="service not found")
     return ServiceOut.model_validate(service)

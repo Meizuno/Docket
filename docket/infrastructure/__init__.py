@@ -1,17 +1,19 @@
 """Infrastructure layer: concrete adapters for the domain ports."""
 
 from docket.infrastructure.broker import InMemoryBroker
-from docket.infrastructure.sqlite import (
-    SqliteAssignmentRepository,
-    SqliteServiceRepository,
-    SqliteTaskRepository,
-    connect,
+from docket.infrastructure.sql import (
+    SqlAssignmentRepository,
+    SqlServiceRepository,
+    SqlTaskRepository,
+    create_engine,
+    create_schema,
 )
 
 __all__ = [
     "InMemoryBroker",
-    "SqliteAssignmentRepository",
-    "SqliteServiceRepository",
-    "SqliteTaskRepository",
-    "connect",
+    "SqlAssignmentRepository",
+    "SqlServiceRepository",
+    "SqlTaskRepository",
+    "create_engine",
+    "create_schema",
 ]

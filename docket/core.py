@@ -28,16 +28,16 @@ class Dispatcher:
         self._services = services
         self._assignments = assignments
 
-    def dispatch(self) -> Assignment | None:
+    async def dispatch(self) -> Assignment | None:
         """Assign the highest-priority pending task to a free service.
 
         Returns the created Assignment, or None when there is nothing to
         dispatch (no pending task, or no available service).
         """
-        pending = self._tasks.list_pending()
+        pending = await self._tasks.list_pending()
         if not pending:
             return None
-        service = self._first_available()
+        service = await self._first_available()
         if service is None:
             return None
 
@@ -50,13 +50,13 @@ class Dispatcher:
         service.last_seen_at = now
         assignment = Assignment(task_id=task.id, service_id=service.id)
 
-        self._tasks.update(task)
-        self._services.update(service)
-        self._assignments.add(assignment)
+        await self._tasks.update(task)
+        await self._services.update(service)
+        await self._assignments.add(assignment)
         return assignment
 
-    def _first_available(self) -> Service | None:
-        for service in self._services.list_all():
+    async def _first_available(self) -> Service | None:
+        for service in await self._services.list_all():
             if service.status is ServiceStatus.ONLINE and not service.busy:
                 return service
         return None

@@ -1,41 +1,44 @@
-"""FastAPI dependency providers: settings -> connection -> repos."""
+"""FastAPI dependency providers: engine -> connection -> repos."""
 
 from __future__ import annotations
 
-import sqlite3
-from collections.abc import Iterator
+from collections.abc import AsyncIterator
+from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
-from docket.config import Settings, get_settings
+from docket.config import get_settings
 from docket.infrastructure import (
-    SqliteServiceRepository,
-    SqliteTaskRepository,
-    connect,
+    SqlServiceRepository,
+    SqlTaskRepository,
+    create_engine,
 )
 
 
-def get_connection(
-    settings: Annotated[Settings, Depends(get_settings)],
-) -> Iterator[sqlite3.Connection]:
-    conn = connect(settings.database)
-    try:
+@lru_cache
+def get_engine() -> AsyncEngine:
+    return create_engine(get_settings().database_url)
+
+
+async def get_connection(
+    engine: Annotated[AsyncEngine, Depends(get_engine)],
+) -> AsyncIterator[AsyncConnection]:
+    async with engine.begin() as conn:
         yield conn
-    finally:
-        conn.close()
 
 
-Connection = Annotated[sqlite3.Connection, Depends(get_connection)]
+Connection = Annotated[AsyncConnection, Depends(get_connection)]
 
 
-def get_task_repo(conn: Connection) -> SqliteTaskRepository:
-    return SqliteTaskRepository(conn)
+def get_task_repo(conn: Connection) -> SqlTaskRepository:
+    return SqlTaskRepository(conn)
 
 
-def get_service_repo(conn: Connection) -> SqliteServiceRepository:
-    return SqliteServiceRepository(conn)
+def get_service_repo(conn: Connection) -> SqlServiceRepository:
+    return SqlServiceRepository(conn)
 
 
-TaskRepo = Annotated[SqliteTaskRepository, Depends(get_task_repo)]
-ServiceRepo = Annotated[SqliteServiceRepository, Depends(get_service_repo)]
+TaskRepo = Annotated[SqlTaskRepository, Depends(get_task_repo)]
+ServiceRepo = Annotated[SqlServiceRepository, Depends(get_service_repo)]

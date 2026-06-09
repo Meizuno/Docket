@@ -27,7 +27,10 @@ class Settings(BaseSettings):
     )
 
     app_name: str = Field(default="docket", min_length=1)
-    database: str = Field(default="docket.db", min_length=1)
+    database_url: str = Field(
+        default="postgresql+asyncpg://postgres:postgres@localhost:5432/docket",
+        min_length=1,
+    )
     log_level: str = Field(default="INFO")
 
     @field_validator("log_level")

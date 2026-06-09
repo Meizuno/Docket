@@ -11,9 +11,9 @@ class RegisterService:
     def __init__(self, services: ServiceRepository) -> None:
         self._services = services
 
-    def execute(self, name: str) -> Service:
+    async def execute(self, name: str) -> Service:
         if not name.strip():
             raise DomainError("service name must not be empty")
         service = Service(name=name)
-        self._services.add(service)
+        await self._services.add(service)
         return service

@@ -6,15 +6,15 @@ from pydantic import ValidationError
 def test_defaults() -> None:
     settings = Settings()
     assert settings.app_name == "docket"
-    assert settings.database == "docket.db"
+    assert settings.database_url.startswith("postgresql+asyncpg://")
     assert settings.log_level == "INFO"
 
 
 def test_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("DOCKET_DATABASE", "custom.db")
+    monkeypatch.setenv("DOCKET_DATABASE_URL", "sqlite+aiosqlite://")
     monkeypatch.setenv("DOCKET_LOG_LEVEL", "DEBUG")
     settings = Settings()
-    assert settings.database == "custom.db"
+    assert settings.database_url == "sqlite+aiosqlite://"
     assert settings.log_level == "DEBUG"
 
 
@@ -33,8 +33,10 @@ def test_invalid_log_level_fails_fast(
         Settings()
 
 
-def test_empty_database_fails_fast(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("DOCKET_DATABASE", "")
+def test_empty_database_url_fails_fast(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DOCKET_DATABASE_URL", "")
     with pytest.raises(ValidationError):
         Settings()
 

@@ -39,22 +39,22 @@ router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 
 @router.post("", status_code=201)
-def submit_task(body: TaskCreate, tasks: TaskRepo) -> TaskOut:
-    task = SubmitTask(tasks).execute(
+async def submit_task(body: TaskCreate, tasks: TaskRepo) -> TaskOut:
+    task = await SubmitTask(tasks).execute(
         body.name, body.payload, priority=body.priority
     )
     return TaskOut.model_validate(task)
 
 
 @router.get("/pending")
-def list_pending_tasks(tasks: TaskRepo) -> list[TaskOut]:
-    pending = ListPendingTasks(tasks).execute()
+async def list_pending_tasks(tasks: TaskRepo) -> list[TaskOut]:
+    pending = await ListPendingTasks(tasks).execute()
     return [TaskOut.model_validate(task) for task in pending]
 
 
 @router.get("/{task_id}")
-def get_task(task_id: uuid.UUID, tasks: TaskRepo) -> TaskOut:
-    task = GetTask(tasks).execute(task_id)
+async def get_task(task_id: uuid.UUID, tasks: TaskRepo) -> TaskOut:
+    task = await GetTask(tasks).execute(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="task not found")
     return TaskOut.model_validate(task)

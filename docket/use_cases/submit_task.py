@@ -14,7 +14,7 @@ class SubmitTask:
     def __init__(self, tasks: TaskRepository) -> None:
         self._tasks = tasks
 
-    def execute(
+    async def execute(
         self,
         name: str,
         payload: Mapping[str, Any] | None = None,
@@ -28,5 +28,5 @@ class SubmitTask:
             payload=dict(payload or {}),
             priority=priority,
         )
-        self._tasks.add(task)
+        await self._tasks.add(task)
         return task

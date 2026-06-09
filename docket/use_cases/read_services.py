@@ -13,8 +13,8 @@ class GetService:
     def __init__(self, services: ServiceRepository) -> None:
         self._services = services
 
-    def execute(self, service_id: uuid.UUID) -> Service | None:
-        return self._services.get(service_id)
+    async def execute(self, service_id: uuid.UUID) -> Service | None:
+        return await self._services.get(service_id)
 
 
 class ListServices:
@@ -23,5 +23,5 @@ class ListServices:
     def __init__(self, services: ServiceRepository) -> None:
         self._services = services
 
-    def execute(self) -> list[Service]:
-        return self._services.list_all()
+    async def execute(self) -> list[Service]:
+        return await self._services.list_all()
