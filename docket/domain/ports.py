@@ -42,12 +42,14 @@ class Broker(Protocol):
     is pullable while it is PENDING and not currently leased.
 
     A consumer identifies itself on ``pull``, which leases the task to it. The
-    lease is held for the whole execution and must be renewed with ``extend``
-    before it expires; an expired lease is reclaimed (the worker is presumed
-    dead). ``ack``/``nack`` release the lease (the use case has already set the
-    terminal/requeued status); both take the holder's id so only the lease
-    owner can resolve it. ``requeue_service`` releases all of a crashed
-    consumer's leases, and ``reclaim_expired`` releases every lapsed lease.
+    lease is the sole authority over a RUNNING task: a worker holds the task
+    only while it holds a live lease, so it MUST renew with ``extend``
+    (heartbeat) well within ``lease_timeout`` or lose the task to reclaim. An
+    expired lease is reclaimed (the worker is presumed dead). ``ack``/``nack``
+    release the lease for the live holder only and raise otherwise, so a
+    resolve and a concurrent reclaim serialize on that conditional write.
+    ``requeue_service`` releases all of a crashed consumer's leases, and
+    ``reclaim_expired`` releases every lapsed lease.
     """
 
     async def enqueue(self, task: Task) -> None: ...
