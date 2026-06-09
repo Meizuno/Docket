@@ -1,5 +1,4 @@
 import pytest
-from docket.core import Dispatcher
 
 from tests.fakes import (
     FakeAssignmentRepository,
@@ -21,12 +20,3 @@ def services() -> FakeServiceRepository:
 @pytest.fixture
 def assignments() -> FakeAssignmentRepository:
     return FakeAssignmentRepository()
-
-
-@pytest.fixture
-def dispatcher(
-    tasks: FakeTaskRepository,
-    services: FakeServiceRepository,
-    assignments: FakeAssignmentRepository,
-) -> Dispatcher:
-    return Dispatcher(tasks, services, assignments)
