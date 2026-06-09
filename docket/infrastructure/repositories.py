@@ -29,10 +29,10 @@ def _aware(value: datetime) -> datetime:
     return value if value.tzinfo else value.replace(tzinfo=UTC)
 
 
-# --- mapping helpers -------------------------------------------------------
+# --- mapping helpers (shared with the SqlBroker) ---------------------------
 
 
-def _dump_task(task: Task) -> dict[str, Any]:
+def dump_task(task: Task) -> dict[str, Any]:
     return {
         "id": task.id,
         "name": task.name,
@@ -47,7 +47,7 @@ def _dump_task(task: Task) -> dict[str, Any]:
     }
 
 
-def _load_task(row: RowMapping) -> Task:
+def load_task(row: RowMapping) -> Task:
     return Task(
         id=row["id"],
         name=row["name"],
@@ -62,7 +62,7 @@ def _load_task(row: RowMapping) -> Task:
     )
 
 
-def _dump_service(service: Service) -> dict[str, Any]:
+def dump_service(service: Service) -> dict[str, Any]:
     return {
         "id": service.id,
         "name": service.name,
@@ -73,7 +73,7 @@ def _dump_service(service: Service) -> dict[str, Any]:
     }
 
 
-def _load_service(row: RowMapping) -> Service:
+def load_service(row: RowMapping) -> Service:
     return Service(
         id=row["id"],
         name=row["name"],
@@ -84,7 +84,7 @@ def _load_service(row: RowMapping) -> Service:
     )
 
 
-def _dump_assignment(assignment: Assignment) -> dict[str, Any]:
+def dump_assignment(assignment: Assignment) -> dict[str, Any]:
     return {
         "id": assignment.id,
         "task_id": assignment.task_id,
@@ -94,7 +94,7 @@ def _dump_assignment(assignment: Assignment) -> dict[str, Any]:
     }
 
 
-def _load_assignment(row: RowMapping) -> Assignment:
+def load_assignment(row: RowMapping) -> Assignment:
     released = row["released_at"]
     return Assignment(
         id=row["id"],
@@ -113,18 +113,18 @@ class SqlTaskRepository:
         self._conn = conn
 
     async def add(self, task: Task) -> None:
-        await self._conn.execute(insert(tasks).values(_dump_task(task)))
+        await self._conn.execute(insert(tasks).values(dump_task(task)))
 
     async def get(self, task_id: uuid.UUID) -> Task | None:
         result = await self._conn.execute(
             select(tasks).where(tasks.c.id == task_id)
         )
         row = result.mappings().first()
-        return None if row is None else _load_task(row)
+        return None if row is None else load_task(row)
 
     async def update(self, task: Task) -> None:
         await self._conn.execute(
-            update(tasks).where(tasks.c.id == task.id).values(_dump_task(task))
+            update(tasks).where(tasks.c.id == task.id).values(dump_task(task))
         )
 
     async def list_pending(self) -> list[Task]:
@@ -133,7 +133,7 @@ class SqlTaskRepository:
             .where(tasks.c.status == TaskStatus.PENDING.value)
             .order_by(tasks.c.priority.desc(), tasks.c.created_at.asc())
         )
-        return [_load_task(row) for row in result.mappings().all()]
+        return [load_task(row) for row in result.mappings().all()]
 
 
 class SqlServiceRepository:
@@ -142,7 +142,7 @@ class SqlServiceRepository:
 
     async def add(self, service: Service) -> None:
         await self._conn.execute(
-            insert(services).values(_dump_service(service))
+            insert(services).values(dump_service(service))
         )
 
     async def get(self, service_id: uuid.UUID) -> Service | None:
@@ -150,18 +150,18 @@ class SqlServiceRepository:
             select(services).where(services.c.id == service_id)
         )
         row = result.mappings().first()
-        return None if row is None else _load_service(row)
+        return None if row is None else load_service(row)
 
     async def update(self, service: Service) -> None:
         await self._conn.execute(
             update(services)
             .where(services.c.id == service.id)
-            .values(_dump_service(service))
+            .values(dump_service(service))
         )
 
     async def list_all(self) -> list[Service]:
         result = await self._conn.execute(select(services))
-        return [_load_service(row) for row in result.mappings().all()]
+        return [load_service(row) for row in result.mappings().all()]
 
 
 class SqlAssignmentRepository:
@@ -170,7 +170,7 @@ class SqlAssignmentRepository:
 
     async def add(self, assignment: Assignment) -> None:
         await self._conn.execute(
-            insert(assignments).values(_dump_assignment(assignment))
+            insert(assignments).values(dump_assignment(assignment))
         )
 
     async def get(self, assignment_id: uuid.UUID) -> Assignment | None:
@@ -178,17 +178,17 @@ class SqlAssignmentRepository:
             select(assignments).where(assignments.c.id == assignment_id)
         )
         row = result.mappings().first()
-        return None if row is None else _load_assignment(row)
+        return None if row is None else load_assignment(row)
 
     async def update(self, assignment: Assignment) -> None:
         await self._conn.execute(
             update(assignments)
             .where(assignments.c.id == assignment.id)
-            .values(_dump_assignment(assignment))
+            .values(dump_assignment(assignment))
         )
 
     async def list_active(self) -> list[Assignment]:
         result = await self._conn.execute(
             select(assignments).where(assignments.c.released_at.is_(None))
         )
-        return [_load_assignment(row) for row in result.mappings().all()]
+        return [load_assignment(row) for row in result.mappings().all()]

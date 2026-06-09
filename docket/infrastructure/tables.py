@@ -29,6 +29,9 @@ tasks = Table(
     Column("error", String, nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False),
+    # Broker lease columns (SqlBroker): who holds a pulled task and until when.
+    Column("locked_by", Uuid, nullable=True),
+    Column("lease_expires_at", DateTime(timezone=True), nullable=True),
 )
 
 services = Table(
