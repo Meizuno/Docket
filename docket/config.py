@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO")
     # Dispatches a task gets before it is dead-lettered to FAILED.
     max_attempts: int = Field(default=3, ge=1)
+    # Seconds a pulled task stays leased; a running worker renews it via
+    # heartbeat, so this only bounds how quickly a crash is reclaimed.
+    lease_timeout: float = Field(default=30.0, gt=0)
 
     @field_validator("log_level")
     @classmethod

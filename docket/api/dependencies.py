@@ -59,7 +59,7 @@ def get_assignment_repo(conn: Connection) -> SqlAssignmentRepository:
 
 
 def get_broker(conn: Connection) -> SqlBroker:
-    return SqlBroker(conn)
+    return SqlBroker(conn, get_settings().lease_timeout)
 
 
 TaskRepo = Annotated[SqlTaskRepository, Depends(get_task_repo)]
