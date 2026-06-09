@@ -1,4 +1,4 @@
-"""Ports: repository protocols the application depends on.
+"""Ports: protocols the application depends on.
 
 Interfaces only; concrete implementations live in the infra layer.
 """
@@ -30,3 +30,10 @@ class AssignmentRepository(Protocol):
     def get(self, assignment_id: uuid.UUID) -> Assignment | None: ...
     def update(self, assignment: Assignment) -> None: ...
     def list_active(self) -> list[Assignment]: ...
+
+
+class Broker(Protocol):
+    """A pull-based task queue: producers enqueue, consumers pull."""
+
+    def enqueue(self, task: Task) -> None: ...
+    def pull(self) -> Task | None: ...
