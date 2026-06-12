@@ -1,7 +1,8 @@
 """``python -m loadtest`` entry point.
 
-Exit codes: 0 = invariants PASS, 1 = invariants FAIL, 2 = refused (a non-local
-target without --allow-remote).
+Exit codes: 0 = PASS, 1 = FAIL (a real invariant violation), 2 = refused (a
+non-local target without --allow-remote), 3 = INCONCLUSIVE (e.g. the run did
+not drain in time, so terminal-state invariants could not be judged).
 """
 
 from __future__ import annotations
@@ -54,7 +55,7 @@ def main(argv: list[str] | None = None) -> int:
             f"unexpected={unexpected}"
         )
     print(f"report: {out_dir / 'report.md'}")
-    return 0 if verdict == "PASS" else 1
+    return {"PASS": 0, "FAIL": 1, "INCONCLUSIVE": 3}.get(verdict, 1)
 
 
 if __name__ == "__main__":

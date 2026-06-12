@@ -9,12 +9,22 @@ from typing import Any
 
 from loadtest.config import RunConfig
 from loadtest.metrics import LATENCY_OPS
+from loadtest.models import FAIL, INCONCLUSIVE, PASS
 from loadtest.runner import LevelResult
+
+# Worst-wins ordering when collapsing statuses: a single FAIL dominates, then
+# INCONCLUSIVE, else PASS.
+_SEVERITY = {PASS: 0, INCONCLUSIVE: 1, FAIL: 2}
+_BY_SEVERITY = {rank: status for status, rank in _SEVERITY.items()}
+
+
+def _worst(statuses: list[str]) -> str:
+    return _BY_SEVERITY[max((_SEVERITY[s] for s in statuses), default=0)]
 
 
 def overall_verdict(results: list[LevelResult]) -> str:
-    ok = all(inv.passed for level in results for inv in level.invariants)
-    return "PASS" if ok else "FAIL"
+    statuses = [inv.status for level in results for inv in level.invariants]
+    return _worst(statuses).upper()
 
 
 def _level_to_dict(level: LevelResult) -> dict[str, Any]:
@@ -44,7 +54,7 @@ def _level_to_dict(level: LevelResult) -> dict[str, Any]:
         "invariants": [
             {
                 "name": inv.name,
-                "passed": inv.passed,
+                "status": inv.status,
                 "summary": inv.summary,
                 "offenders": inv.offenders,
             }
@@ -73,8 +83,8 @@ def build_result(
     }
 
 
-def _mark(passed: bool) -> str:
-    return "PASS" if passed else "FAIL"
+def _mark(status: str) -> str:
+    return status.upper()
 
 
 def _render_md(payload: dict[str, Any]) -> str:
@@ -105,8 +115,8 @@ def _render_md(payload: dict[str, Any]) -> str:
     lines.append("")
     lines.append("| invariant | result |")
     lines.append("| --- | --- |")
-    for name, passed in _aggregate_invariants_from_payload(payload).items():
-        lines.append(f"| {name} | {_mark(passed)} |")
+    for name, status in _aggregate_invariants_from_payload(payload).items():
+        lines.append(f"| {name} | {_mark(status)} |")
     lines.append("")
 
     lines.append("## Saturation across ramp")
@@ -135,13 +145,12 @@ def _render_md(payload: dict[str, Any]) -> str:
 
 def _aggregate_invariants_from_payload(
     payload: dict[str, Any],
-) -> dict[str, bool]:
-    aggregate: dict[str, bool] = {}
+) -> dict[str, str]:
+    grouped: dict[str, list[str]] = {}
     for level in payload["levels"]:
         for inv in level["invariants"]:
-            name = inv["name"]
-            aggregate[name] = aggregate.get(name, True) and inv["passed"]
-    return aggregate
+            grouped.setdefault(inv["name"], []).append(inv["status"])
+    return {name: _worst(statuses) for name, statuses in grouped.items()}
 
 
 def _render_level_md(level: dict[str, Any]) -> list[str]:
@@ -190,11 +199,11 @@ def _render_level_md(level: dict[str, Any]) -> list[str]:
     lines.append("| --- | :---: | --- |")
     for inv in level["invariants"]:
         lines.append(
-            f"| {inv['name']} | {_mark(inv['passed'])} | {inv['summary']} |"
+            f"| {inv['name']} | {_mark(inv['status'])} | {inv['summary']} |"
         )
     lines.append("")
     for inv in level["invariants"]:
-        if not inv["passed"] and inv["offenders"]:
+        if inv["status"] != PASS and inv["offenders"]:
             lines.append(f"Offenders for `{inv['name']}`:")
             lines.append("")
             for item in inv["offenders"]:

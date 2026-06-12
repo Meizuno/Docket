@@ -57,8 +57,11 @@ uv run python -m loadtest \
 Python instead: `pip install -r loadtest/requirements.txt` then
 `python -m loadtest ...`.
 
-The process prints a one-line `verdict: PASS|FAIL` and the report path, and
-exits `0` on PASS, `1` on FAIL, `2` if it refused a non-local target.
+The process prints a one-line `verdict: PASS|FAIL|INCONCLUSIVE` and the report
+path. Exit codes: `0` PASS, `1` FAIL (a real invariant violation), `2` refused
+(non-local target without `--allow-remote`), `3` INCONCLUSIVE (e.g. the run did
+not drain in time, so terminal-state invariants couldn't be judged — raise
+`--drain-timeout` or lower the load).
 
 ## The invariants (the core value)
 
@@ -68,6 +71,14 @@ exits `0` on PASS, `1` on FAIL, `2` if it refused a non-local target.
 | **exactly_once_terminal** | After draining, every submitted task is terminal (succeeded/failed), and the terminal count equals the submitted count — none left pending/running. |
 | **reaper_recovery** | Tasks abandoned by crashers eventually reach a terminal state (reclaim works under load). |
 | **retry_bound** | Failed/reclaimed tasks respect `max_attempts` — dead-lettered, not looped forever. |
+
+`no_overlapping_holds` and `retry_bound` are violations regardless of draining
+(an overlap or a blown cap is always a bug). `exactly_once_terminal` and
+`reaper_recovery` assert a *settled* state, so they can only be judged once the
+queue drains: if the run hit `--drain-timeout` with work still pending, they
+report **INCONCLUSIVE** ("couldn't tell"), not FAIL. The overall verdict is
+FAIL if any invariant truly failed, else INCONCLUSIVE if any couldn't be
+judged, else PASS.
 
 Overlap detection uses client-side timestamps. A self-released hold ends at its
 release time; a crashed/lost-lease hold is bounded by `claimed_at +

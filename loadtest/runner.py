@@ -227,7 +227,7 @@ async def run_level(
     failed = sum(1 for s in final.values() if s.get("status") == "failed")
     crasher_ids = {h.task_id for h in holds if h.ended_by == "crash"}
     results = invariants.check_all(
-        holds, submitted, final, crasher_ids, config
+        holds, submitted, final, crasher_ids, config, drained=drained
     )
     completed_per_sec = (succeeded + failed) / wall if wall > 0 else 0.0
     return LevelResult(

@@ -50,9 +50,17 @@ class Hold:
     ended_by: str  # complete | fail | lost_lease | crash | error
 
 
+# Invariant outcome states. INCONCLUSIVE means the invariant could not be
+# judged — e.g. the run did not drain in time, so a terminal-state check has
+# nothing definitive to assert. It is distinct from FAIL (a real violation).
+PASS = "pass"  # noqa: S105  (a status label, not a password)
+FAIL = "fail"
+INCONCLUSIVE = "inconclusive"
+
+
 @dataclass(slots=True)
 class InvariantResult:
     name: str
-    passed: bool
+    status: str  # PASS | FAIL | INCONCLUSIVE
     summary: str
     offenders: list[str] = field(default_factory=list)

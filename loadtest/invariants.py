@@ -2,6 +2,12 @@
 
 These are the core value of the harness — they assert the queue behaved
 correctly under concurrency, not that it was fast.
+
+Two invariants are violations regardless of draining (an overlap or a blown
+retry cap is always a bug): no_overlapping_holds and retry_bound. The other
+two assert a *settled* state and can only be judged once the queue drained;
+if it did not, they report INCONCLUSIVE rather than FAIL — "couldn't tell",
+not "broken".
 """
 
 from __future__ import annotations
@@ -12,7 +18,14 @@ from itertools import pairwise
 from typing import Any
 
 from loadtest.config import RunConfig
-from loadtest.models import TERMINAL_STATES, Hold, InvariantResult
+from loadtest.models import (
+    FAIL,
+    INCONCLUSIVE,
+    PASS,
+    TERMINAL_STATES,
+    Hold,
+    InvariantResult,
+)
 
 # Slack for client-side timestamp jitter (network latency; clocks are shared
 # when target and harness run on one host). Used only for the lease-bounded
@@ -63,21 +76,30 @@ def no_overlapping_holds(holds: list[Hold], lease: float) -> InvariantResult:
                     f"{end:.3f}s but w{nxt.worker_id} claimed at "
                     f"{nxt.claimed_at:.3f}s"
                 )
-    passed = not offenders
     summary = (
         "no task was held by two workers at once"
-        if passed
+        if not offenders
         else f"{len(offenders)} overlapping hold(s)"
     )
+    # An overlap is always a bug — judged regardless of draining.
+    status = PASS if not offenders else FAIL
     return InvariantResult(
-        "no_overlapping_holds", passed, summary, _truncate(offenders)
+        "no_overlapping_holds", status, summary, _truncate(offenders)
     )
 
 
 def exactly_once_terminal(
-    submitted: list[uuid.UUID], states: dict[uuid.UUID, dict[str, Any]]
+    submitted: list[uuid.UUID],
+    states: dict[uuid.UUID, dict[str, Any]],
+    *,
+    drained: bool,
 ) -> InvariantResult:
-    """After draining, every submitted task is terminal exactly once."""
+    """Every submitted task is terminal exactly once — once the queue drained.
+
+    If the run did not drain, non-terminal tasks are simply unfinished work,
+    so this is INCONCLUSIVE (raise --drain-timeout or lower the load), not a
+    failure. Drained-but-non-terminal is a real FAIL.
+    """
     offenders: list[str] = []
     terminal = 0
     for task_id in submitted:
@@ -90,18 +112,37 @@ def exactly_once_terminal(
             terminal += 1
         else:
             offenders.append(f"{task_id}: status={status}")
-    passed = not offenders and terminal == len(submitted)
-    summary = f"{terminal}/{len(submitted)} submitted tasks terminal"
+
+    total = len(submitted)
+    if not offenders and terminal == total:
+        result = PASS
+        summary = f"{terminal}/{total} submitted tasks terminal"
+    elif not drained:
+        result = INCONCLUSIVE
+        summary = (
+            f"{terminal}/{total} terminal; run did not drain within "
+            f"--drain-timeout (raise it or lower the load)"
+        )
+    else:
+        result = FAIL
+        summary = f"{terminal}/{total} terminal after draining"
     return InvariantResult(
-        "exactly_once_terminal", passed, summary, _truncate(offenders)
+        "exactly_once_terminal", result, summary, _truncate(offenders)
     )
 
 
 def reaper_recovery(
     crasher_task_ids: set[uuid.UUID],
     states: dict[uuid.UUID, dict[str, Any]],
+    *,
+    drained: bool,
 ) -> InvariantResult:
-    """Tasks abandoned by crashers must eventually reach a terminal state."""
+    """Tasks abandoned by crashers must eventually reach a terminal state.
+
+    Recovery is something that happens over time, so an unrecovered task in a
+    run that did not drain is INCONCLUSIVE (it may yet be reclaimed), while an
+    unrecovered task after a full drain is a FAIL.
+    """
     offenders: list[str] = []
     recovered = 0
     for task_id in crasher_task_ids:
@@ -111,14 +152,25 @@ def reaper_recovery(
             recovered += 1
         else:
             offenders.append(f"{task_id}: status={status}")
-    passed = not offenders
-    summary = (
-        f"{recovered}/{len(crasher_task_ids)} abandoned task(s) recovered"
-        if crasher_task_ids
-        else "no tasks were abandoned by crashers"
-    )
+
+    total = len(crasher_task_ids)
+    if not crasher_task_ids:
+        result = PASS
+        summary = "no tasks were abandoned by crashers"
+    elif not offenders:
+        result = PASS
+        summary = f"{recovered}/{total} abandoned task(s) recovered"
+    elif not drained:
+        result = INCONCLUSIVE
+        summary = (
+            f"{recovered}/{total} recovered; run did not drain within "
+            f"--drain-timeout"
+        )
+    else:
+        result = FAIL
+        summary = f"{recovered}/{total} abandoned task(s) recovered"
     return InvariantResult(
-        "reaper_recovery", passed, summary, _truncate(offenders)
+        "reaper_recovery", result, summary, _truncate(offenders)
     )
 
 
@@ -127,7 +179,10 @@ def retry_bound(
     states: dict[uuid.UUID, dict[str, Any]],
     max_attempts: int,
 ) -> InvariantResult:
-    """Failed/reclaimed tasks respect max_attempts (no infinite loop)."""
+    """Failed/reclaimed tasks respect max_attempts (no infinite loop).
+
+    Exceeding the cap is always a bug, so this is judged regardless of drain.
+    """
     offenders: list[str] = []
     for task_id in submitted:
         state = states.get(task_id)
@@ -136,14 +191,14 @@ def retry_bound(
         attempts = int(state.get("attempts", 0))
         if attempts > max_attempts:
             offenders.append(f"{task_id}: attempts={attempts}")
-    passed = not offenders
     summary = (
         f"all attempts <= max_attempts ({max_attempts})"
-        if passed
+        if not offenders
         else f"{len(offenders)} task(s) over max_attempts ({max_attempts})"
     )
+    status = PASS if not offenders else FAIL
     return InvariantResult(
-        "retry_bound", passed, summary, _truncate(offenders)
+        "retry_bound", status, summary, _truncate(offenders)
     )
 
 
@@ -153,10 +208,12 @@ def check_all(
     states: dict[uuid.UUID, dict[str, Any]],
     crasher_task_ids: set[uuid.UUID],
     config: RunConfig,
+    *,
+    drained: bool,
 ) -> list[InvariantResult]:
     return [
         no_overlapping_holds(holds, config.lease_timeout),
-        exactly_once_terminal(submitted, states),
-        reaper_recovery(crasher_task_ids, states),
+        exactly_once_terminal(submitted, states, drained=drained),
+        reaper_recovery(crasher_task_ids, states, drained=drained),
         retry_bound(submitted, states, config.max_attempts),
     ]
