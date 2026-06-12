@@ -1,0 +1,35 @@
+# Two services: Postgres and the API, each in its own container. The API
+# waits for Postgres to be healthy, then creates its schema on startup.
+#
+#   docker compose up --build
+#   open http://localhost:8000/docs
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: docket
+      POSTGRES_PASSWORD: docket
+      POSTGRES_DB: docket
+    # Not published to the host: the api reaches it over the compose network at
+    # db:5432. To inspect it directly use `docker compose exec db psql -U docket
+    # -d docket`, or add a `ports:` mapping on a free host port.
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U docket -d docket"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    environment:
+      DOCKET_DATABASE_URL: postgresql+asyncpg://docket:docket@db:5432/docket
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
