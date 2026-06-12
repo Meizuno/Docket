@@ -51,6 +51,9 @@ htmlcov/
 *.log
 logs/
 
+# Load-test harness output
+loadtest/reports/
+
 # IDE / editor
 .vscode/
 .idea/

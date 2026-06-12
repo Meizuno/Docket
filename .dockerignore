@@ -28,6 +28,9 @@ uv.lock
 # Tests are not needed in the runtime image
 tests
 
+# Operational load-test harness — never shipped in the app image
+loadtest
+
 # Secrets / local config
 .env
 .env.*

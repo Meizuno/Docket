@@ -1,0 +1,16 @@
+# Compose override for load testing: shrink the lease and reaper sweep so
+# crash -> reclaim happens in seconds (the app defaults are 300s / 30s, which
+# make reclaim untestable in a short run). Layer it on the base stack:
+#
+#   docker compose -f docker-compose.yml -f loadtest/compose.loadtest.yml up --build
+#
+# Then run the harness with a matching --lease-timeout 15.
+services:
+  migrate:
+    environment:
+      DOCKET_LEASE_TIMEOUT: "15"
+      DOCKET_REAPER_INTERVAL: "3"
+  api:
+    environment:
+      DOCKET_LEASE_TIMEOUT: "15"
+      DOCKET_REAPER_INTERVAL: "3"
