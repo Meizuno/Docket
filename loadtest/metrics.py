@@ -59,3 +59,34 @@ class Metrics:
 
     def kind_count(self, kind: str) -> int:
         return self.by_kind.get(kind, 0)
+
+    def expected_by_op(self) -> dict[str, int]:
+        """Expected (HTTP 400) rejections grouped by operation.
+
+        A lost-lease heartbeat/complete is the direct fingerprint of a lease
+        slip; claim:400 is usually a benign claim-while-busy.
+        """
+        out: dict[str, int] = {}
+        for key, count in self.by_status.items():
+            op, _, status = key.partition(":")
+            if status == "400":
+                out[op] = out.get(op, 0) + count
+        return out
+
+    def claim_latency_degrading(
+        self, *, ratio: float = 4.0, floor_ms: float = 50.0
+    ) -> bool:
+        """Whether claim latency rose sharply from the first to the second
+        half of the run.
+
+        Samples are recorded in call order, so the first half approximates the
+        early window and the second the late window. Requires the late median
+        to clear ``floor_ms`` so trivial sub-millisecond noise can't trip it.
+        """
+        vals = self._latency.get("claim", [])
+        if len(vals) < 10:
+            return False
+        mid = len(vals) // 2
+        early = percentile(vals[:mid], 0.5) or 0.0
+        late = percentile(vals[mid:], 0.5) or 0.0
+        return late * 1000 >= floor_ms and early > 0 and late / early >= ratio

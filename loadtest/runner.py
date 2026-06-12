@@ -11,7 +11,9 @@ import asyncio
 import random
 import time
 import uuid
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
+from itertools import pairwise
 from typing import Any
 
 import httpx
@@ -40,10 +42,23 @@ class StatsPoint:
     data: dict[str, Any]
 
 
+# Maps the previous hold's outcome to why the task was redelivered. A live
+# holder that lost its lease (lost_lease) is the lease-expiry-reclaim signal.
+_REDELIVERY_BY_PREV = {
+    "fail": "retry_after_fail",
+    "crash": "reclaim_after_crash",
+    "lost_lease": "lease_expiry_reclaim",
+    "complete": "after_complete",
+    "error": "after_error",
+}
+
+
 @dataclass(slots=True)
 class LevelResult:
     workers: int
     submitted: int
+    # drained = every submitted task is terminal at the authoritative final
+    # check (completion), not whatever the poll window happened to observe.
     drained: bool
     wall_seconds: float
     completed_per_sec: float
@@ -51,6 +66,12 @@ class LevelResult:
     failed: int
     metrics: Metrics
     invariants: list[InvariantResult]
+    executions: int
+    ended_by: dict[str, int]
+    attempts_histogram: dict[int, int]
+    redelivery: dict[str, int]
+    expected_by_op: dict[str, int]
+    saturation_reasons: list[str]
     backlog: list[BacklogPoint] = field(default_factory=list)
     stats: list[StatsPoint] = field(default_factory=list)
     max_pending: int = 0
@@ -58,7 +79,7 @@ class LevelResult:
 
     @property
     def saturated(self) -> bool:
-        return (not self.drained) or self.metrics.kind_count("unexpected") > 0
+        return bool(self.saturation_reasons)
 
 
 async def _register_workers(
@@ -187,6 +208,83 @@ async def _await_workers(
         await asyncio.gather(*worker_tasks, return_exceptions=True)
 
 
+def _all_terminal(
+    submitted: list[uuid.UUID], final: dict[uuid.UUID, dict[str, Any]]
+) -> bool:
+    if not submitted:
+        return True
+    return all(
+        str(final.get(task_id, {}).get("status")) in TERMINAL_STATES
+        for task_id in submitted
+    )
+
+
+def _attempts_histogram(
+    submitted: list[uuid.UUID], final: dict[uuid.UUID, dict[str, Any]]
+) -> dict[int, int]:
+    """How many tasks ran 1x, 2x, 3x... — from authoritative final attempts."""
+    hist: Counter[int] = Counter()
+    for task_id in submitted:
+        state = final.get(task_id)
+        hist[int(state.get("attempts", 0)) if state else 0] += 1
+    return dict(sorted(hist.items()))
+
+
+def _redelivery_attribution(holds: list[Hold]) -> dict[str, int]:
+    """Attribute each redelivery to the previous holder's outcome.
+
+    For a task's holds ordered by claim time, every hold after the first is a
+    redelivery caused by what happened to the prior hold (fail / crash / a
+    live lease that lapsed).
+    """
+    counts: dict[str, int] = {
+        "retry_after_fail": 0,
+        "reclaim_after_crash": 0,
+        "lease_expiry_reclaim": 0,
+    }
+    by_task: dict[uuid.UUID, list[Hold]] = defaultdict(list)
+    for hold in holds:
+        by_task[hold.task_id].append(hold)
+    for task_holds in by_task.values():
+        task_holds.sort(key=lambda h: h.claimed_at)
+        for prev, _next in pairwise(task_holds):
+            bucket = _REDELIVERY_BY_PREV.get(prev.ended_by, "after_other")
+            counts[bucket] = counts.get(bucket, 0) + 1
+    return counts
+
+
+def _backlog_persisting(backlog: list[BacklogPoint]) -> bool:
+    """True if outstanding work is not trending toward zero by the window end.
+
+    A queue that is steadily draining (just slow) is NOT persisting — that is
+    an inconclusive run needing more time, not saturation.
+    """
+    outstanding = [point.outstanding for point in backlog]
+    if len(outstanding) < 3:
+        return bool(outstanding) and outstanding[-1] > 0
+    early = outstanding[len(outstanding) // 4]
+    return outstanding[-1] > 0 and outstanding[-1] >= early * 0.9
+
+
+def _saturation_reasons(
+    *, complete: bool, backlog: list[BacklogPoint], metrics: Metrics
+) -> list[str]:
+    """Real saturation signals.
+
+    A completed run drains its backlog, so the backlog signal cannot fire
+    there; errors and latency degradation still can.
+    """
+    reasons: list[str] = []
+    unexpected = metrics.kind_count("unexpected")
+    if unexpected > 0:
+        reasons.append(f"{unexpected} unexpected error(s)")
+    if not complete and _backlog_persisting(backlog):
+        reasons.append("backlog not trending toward zero")
+    if metrics.claim_latency_degrading():
+        reasons.append("claim latency degrading across the run")
+    return reasons
+
+
 async def run_level(
     config: RunConfig, level_workers: int, level: int
 ) -> LevelResult:
@@ -214,32 +312,43 @@ async def run_level(
             )
             for index, spec in enumerate(workers)
         ]
-        drained, backlog, stats = await _monitor(
+        # The poll loop's own drain observation is advisory; completion is
+        # judged below from the authoritative per-task final states.
+        _observed, backlog, stats = await _monitor(
             client, config, submitted, stop, start
         )
         await _await_workers(worker_tasks, config)
         wall = time.time() - start
         final = await _fetch_states(client, submitted)
 
+    complete = _all_terminal(submitted, final)
     succeeded = sum(
         1 for s in final.values() if s.get("status") == "succeeded"
     )
     failed = sum(1 for s in final.values() if s.get("status") == "failed")
     crasher_ids = {h.task_id for h in holds if h.ended_by == "crash"}
     results = invariants.check_all(
-        holds, submitted, final, crasher_ids, config, drained=drained
+        holds, submitted, final, crasher_ids, config, drained=complete
     )
     completed_per_sec = (succeeded + failed) / wall if wall > 0 else 0.0
     return LevelResult(
         workers=level_workers,
         submitted=len(submitted),
-        drained=drained,
+        drained=complete,
         wall_seconds=round(wall, 3),
         completed_per_sec=round(completed_per_sec, 3),
         succeeded=succeeded,
         failed=failed,
         metrics=metrics,
         invariants=results,
+        executions=len(holds),
+        ended_by=dict(Counter(h.ended_by for h in holds)),
+        attempts_histogram=_attempts_histogram(submitted, final),
+        redelivery=_redelivery_attribution(holds),
+        expected_by_op=metrics.expected_by_op(),
+        saturation_reasons=_saturation_reasons(
+            complete=complete, backlog=backlog, metrics=metrics
+        ),
         backlog=backlog,
         stats=stats,
         max_pending=max((b.pending or 0 for b in backlog), default=0),

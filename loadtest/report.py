@@ -47,9 +47,23 @@ def _level_to_dict(level: LevelResult) -> dict[str, Any]:
             "samples": level.metrics.error_samples,
         },
         "latency_ms": {op: level.metrics.latency_ms(op) for op in LATENCY_OPS},
+        "expected_by_op": level.expected_by_op,
+        "re_executions": {
+            "tasks": level.submitted,
+            "executions": level.executions,
+            "ratio": round(level.executions / level.submitted, 3)
+            if level.submitted
+            else 0.0,
+            "ended_by": level.ended_by,
+            "attempts_histogram": {
+                str(k): v for k, v in level.attempts_histogram.items()
+            },
+            "redelivery": level.redelivery,
+        },
         "saturation": {
             "max_pending": level.max_pending,
             "max_outstanding": level.max_outstanding,
+            "reasons": level.saturation_reasons,
         },
         "invariants": [
             {
@@ -153,6 +167,44 @@ def _aggregate_invariants_from_payload(
     return {name: _worst(statuses) for name, statuses in grouped.items()}
 
 
+_PRIMARY_REDELIVERY = (
+    "retry_after_fail",
+    "reclaim_after_crash",
+    "lease_expiry_reclaim",
+)
+
+
+def _render_reexec_md(rex: dict[str, Any]) -> list[str]:
+    lines: list[str] = ["Re-executions:", ""]
+    lines.append(
+        f"- {rex['executions']} executions across {rex['tasks']} tasks "
+        f"({rex['ratio']}x per task)"
+    )
+    ended = rex["ended_by"]
+    if ended:
+        joined = ", ".join(f"{k}={v}" for k, v in sorted(ended.items()))
+        lines.append(f"- ended_by: {joined}")
+    hist = rex["attempts_histogram"]
+    if hist:
+        joined = ", ".join(f"{k}x={v}" for k, v in hist.items())
+        lines.append(f"- attempts histogram: {joined}")
+    red = rex["redelivery"]
+    lines.append(
+        "- redelivery cause: "
+        f"retry-after-fail={red.get('retry_after_fail', 0)}, "
+        f"reclaim-after-crash={red.get('reclaim_after_crash', 0)}, "
+        f"lease-expiry reclaim={red.get('lease_expiry_reclaim', 0)}"
+    )
+    extra = {
+        k: v for k, v in red.items() if k not in _PRIMARY_REDELIVERY and v
+    }
+    if extra:
+        joined = ", ".join(f"{k}={v}" for k, v in sorted(extra.items()))
+        lines.append(f"- other redelivery: {joined}")
+    lines.append("")
+    return lines
+
+
 def _render_level_md(level: dict[str, Any]) -> list[str]:
     lines: list[str] = []
     lines.append(f"## Level: {level['workers']} workers")
@@ -167,6 +219,9 @@ def _render_level_md(level: dict[str, Any]) -> list[str]:
         f"wall: {level['wall_seconds']}s  "
         f"done/s: {level['completed_per_sec']:.1f}"
     )
+    reasons = level["saturation"]["reasons"]
+    sat = "no" if not reasons else "YES — " + "; ".join(reasons)
+    lines.append(f"- saturated: {sat}")
     lines.append("")
 
     lines.append("Latency (ms):")
@@ -185,7 +240,14 @@ def _render_level_md(level: dict[str, Any]) -> list[str]:
         f"Outcomes: ok={errors['ok']}  expected={errors['expected']}  "
         f"unexpected={errors['unexpected']}"
     )
+    expected_by_op = level["expected_by_op"]
+    if expected_by_op:
+        detail = ", ".join(
+            f"{op}:400={count}" for op, count in sorted(expected_by_op.items())
+        )
+        lines.append(f"Expected rejections by op: {detail}")
     lines.append("")
+    lines.extend(_render_reexec_md(level["re_executions"]))
     if errors["by_status"]:
         lines.append("| op:status | count |")
         lines.append("| --- | ---: |")
