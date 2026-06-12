@@ -47,3 +47,43 @@ jobs:
 
       - name: ${{ matrix.check.name }}
         run: ${{ matrix.check.run }}
+
+  migrations:
+    name: migrations
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: docket
+          POSTGRES_PASSWORD: docket
+          POSTGRES_DB: docket
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U docket -d docket"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DOCKET_DATABASE_URL: postgresql+asyncpg://docket:docket@localhost:5432/docket
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      # Migrations must apply cleanly and leave no gap with the models:
+      # `check` fails if the live metadata drifts from the revisions.
+      - name: Apply migrations and check for drift
+        run: |
+          alembic upgrade head
+          alembic check
