@@ -30,6 +30,9 @@ RUN useradd --create-home --uid 10001 appuser
 COPY --from=builder /opt/venv /opt/venv
 
 WORKDIR /app
+# Migration tooling: `alembic upgrade head` is run by the compose migrate step.
+COPY alembic.ini ./
+COPY alembic ./alembic
 USER appuser
 
 EXPOSE 8000

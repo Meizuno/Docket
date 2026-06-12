@@ -1,5 +1,6 @@
-# Two services: Postgres and the API, each in its own container. The API
-# waits for Postgres to be healthy, then creates its schema on startup.
+# Three steps: Postgres, a one-shot Alembic migration, then the API. The api
+# starts only after migrate exits successfully, so the schema is always at head
+# before it serves. Schema is owned by migrations — the app no longer creates it.
 #
 #   docker compose up --build
 #   open http://localhost:8000/docs
@@ -21,6 +22,15 @@ services:
       timeout: 3s
       retries: 10
 
+  migrate:
+    build: .
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DOCKET_DATABASE_URL: postgresql+asyncpg://docket:docket@db:5432/docket
+    depends_on:
+      db:
+        condition: service_healthy
+
   api:
     build: .
     environment:
@@ -28,8 +38,8 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      db:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
 volumes:
   pgdata:

@@ -22,7 +22,6 @@ from docket.infrastructure import (
     SqlBroker,
     SqlServiceRepository,
     SqlTaskRepository,
-    metadata,
 )
 from docket.use_cases import ReclaimExpiredTasks
 
@@ -55,9 +54,9 @@ async def _reap_expired(engine: AsyncEngine, interval: float) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # The schema is owned by Alembic migrations (run via the `migrate` step),
+    # not created here — the app assumes it is already at head.
     engine = get_engine()
-    async with engine.begin() as conn:
-        await conn.run_sync(metadata.create_all)
     reaper = asyncio.create_task(
         _reap_expired(engine, get_settings().reaper_interval)
     )
