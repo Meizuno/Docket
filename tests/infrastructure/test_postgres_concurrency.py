@@ -58,18 +58,23 @@ class FakeClock:
 
 @pytest.fixture(scope="module")
 def pg_url() -> Iterator[str]:
-    container = (
-        DockerContainer("postgres:16-alpine")
-        .with_env("POSTGRES_USER", "docket")
-        .with_env("POSTGRES_PASSWORD", "docket")
-        .with_env("POSTGRES_DB", "docket")
-        .with_exposed_ports(5432)
-    )
+    container = None
     try:
+        # Construction can already touch the Docker daemon (the client is
+        # created eagerly in some testcontainers versions), so build and
+        # start inside the same guard.
+        container = (
+            DockerContainer("postgres:16-alpine")
+            .with_env("POSTGRES_USER", "docket")
+            .with_env("POSTGRES_PASSWORD", "docket")
+            .with_env("POSTGRES_DB", "docket")
+            .with_exposed_ports(5432)
+        )
         container.start()  # readiness is gated by the engine fixture's retry
-    except Exception as exc:  # Docker absent, image pull failed, etc.
-        with contextlib.suppress(Exception):
-            container.stop()
+    except Exception as exc:  # Docker absent/disabled, image pull failed, etc.
+        if container is not None:
+            with contextlib.suppress(Exception):
+                container.stop()
         pytest.skip(f"Postgres container unavailable: {exc}")
     try:
         host = container.get_container_host_ip()
