@@ -1,0 +1,8 @@
+# Standalone dependencies for the load-test harness. Deliberately kept out of
+# the app's runtime deps (pyproject [project].dependencies). httpx is already
+# in the app's dev extra, so `uv run python -m loadtest ...` works without this
+# file; install it only when running the harness from a bare environment:
+#
+#   python -m venv .venv-loadtest && . .venv-loadtest/bin/activate
+#   pip install -r loadtest/requirements.txt
+httpx>=0.27
