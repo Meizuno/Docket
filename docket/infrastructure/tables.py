@@ -36,6 +36,25 @@ tasks = Table(
     Column("lease_expires_at", DateTime(timezone=True), nullable=True),
 )
 
+# Matches SqlBroker.pull / list_pending: the pending queue in claim order, so
+# the next task is the first index entry instead of a sort over the table.
+Index(
+    "ix_tasks_pullable",
+    tasks.c.priority.desc(),
+    tasks.c.created_at,
+    sqlite_where=text("status = 'pending'"),
+    postgresql_where=text("status = 'pending'"),
+)
+
+# Matches SqlBroker.reclaim_expired: only leased rows, ordered by expiry, so
+# the periodic sweep touches lapsed leases only.
+Index(
+    "ix_tasks_lease",
+    tasks.c.lease_expires_at,
+    sqlite_where=text("locked_by IS NOT NULL"),
+    postgresql_where=text("locked_by IS NOT NULL"),
+)
+
 services = Table(
     "services",
     metadata,
