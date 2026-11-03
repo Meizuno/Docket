@@ -72,6 +72,7 @@ ignore-words-list = "crasher,crashers"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 markers = [
     "postgres: needs a real Postgres via testcontainers (skipped without Docker)",
 ]
